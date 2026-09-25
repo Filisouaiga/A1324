@@ -105,4 +105,37 @@ public class BootstrapNode extends UnicastRemoteObject implements BootstrapServi
             }
         }
     }
+    
+    public static void main(String[] args) {
+        int port = DEFAULT_PORT;
+        if (args.length > 0) {
+            try {
+                port = Integer.parseInt(args[0]);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        try {
+            Registry registry;
+            try {
+                registry = LocateRegistry.createRegistry(port);
+                System.out.println("[Bootstrap] Created RMI registry on port " + port);
+            } catch (RemoteException e) {
+                registry = LocateRegistry.getRegistry(port);
+                System.out.println("[Bootstrap] Using existing registry on port " + port);
+            }
+
+            BootstrapNode node = new BootstrapNode();
+            registry.rebind(SERVICE_NAME, node);
+
+            System.out.println("[Bootstrap] Service bound as '" + SERVICE_NAME + "'");
+            System.out.println("[Bootstrap] Ready - waiting for workers...");
+
+            Thread.currentThread().join();
+        } catch (Exception e) {
+            System.err.println("[Bootstrap] Failed to start: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
 }
