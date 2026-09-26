@@ -10,33 +10,198 @@ package com.example.cs324_a1.common;
  */
 
 import java.io.Serializable;
+import java.util.Objects;
 
+/**
+ * Information about a worker in the distributed system.
+ *
+ * Combines:
+ * - Worker identity and RMI connection information
+ * - Job Allocation Counter (JAC) for leader election
+ */
 public class WorkerInfo implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    // =========================================================
+    // WORKER / RMI INFORMATION
+    // =========================================================
+
     private final int workerId;
+    private final String host;
+    private final int port;
+    private final String rmiName;
+
+    // =========================================================
+    // PERSON 2 - JOB ALLOCATION COUNTER
+    // =========================================================
+
     private int jac;
 
-    public WorkerInfo(int workerId, int jac) {
-        this.workerId = workerId;
-        this.jac = jac;
+    // =========================================================
+    // CONSTRUCTORS
+    // =========================================================
+
+    /**
+     * Creates a worker with JAC starting at 0.
+     * Used when a normal worker joins the distributed system.
+     */
+    public WorkerInfo(
+            int workerId,
+            String host,
+            int port,
+            String rmiName) {
+
+        this(workerId, host, port, rmiName, 0);
     }
 
+    /**
+     * Creates a worker with a specified JAC.
+     * Useful for election testing.
+     */
+    public WorkerInfo(
+            int workerId,
+            String host,
+            int port,
+            String rmiName,
+            int jac) {
+
+        this.workerId = workerId;
+        this.host = host;
+        this.port = port;
+        this.rmiName = rmiName;
+        this.jac = Math.max(0, jac);
+    }
+
+    /**
+     * Keeps compatibility with the original Person 2 tests.
+     *
+     * This constructor should only be used for local/testing
+     * situations where RMI information is not required.
+     */
+    public WorkerInfo(int workerId, int jac) {
+
+        this(
+                workerId,
+                "localhost",
+                1100 + workerId,
+                "WorkerService-" + workerId,
+                jac
+        );
+    }
+
+    // =========================================================
+    // WORKER ID
+    // =========================================================
+
+    /**
+     * Person 2 compatibility method.
+     */
     public int getWorkerId() {
         return workerId;
     }
 
-    public int getJac() {
+    /**
+     * Person 1 compatibility method.
+     */
+    public int getId() {
+        return workerId;
+    }
+
+    // =========================================================
+    // RMI INFORMATION
+    // =========================================================
+
+    public String getHost() {
+        return host;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public String getRmiName() {
+        return rmiName;
+    }
+
+    /**
+     * Full RMI lookup URL.
+     *
+     * Example:
+     * rmi://localhost:1101/WorkerService-1
+     */
+    public String getRmiUrl() {
+
+        return "rmi://"
+                + host
+                + ":"
+                + port
+                + "/"
+                + rmiName;
+    }
+
+    // =========================================================
+    // JAC
+    // =========================================================
+
+    public synchronized int getJac() {
         return jac;
     }
 
-    public void incrementJac() {
+    /**
+     * Increase JAC when this worker, while acting as coordinator,
+     * assigns work to another worker.
+     */
+    public synchronized void incrementJac() {
+
         jac++;
+
+        System.out.println(
+                "[JAC] Worker "
+                + workerId
+                + " JAC increased to "
+                + jac
+        );
+    }
+
+    // =========================================================
+    // OBJECT METHODS
+    // =========================================================
+
+    @Override
+    public synchronized String toString() {
+
+        return "WorkerInfo{"
+                + "id=" + workerId
+                + ", host=" + host
+                + ", port=" + port
+                + ", rmiName=" + rmiName
+                + ", JAC=" + jac
+                + '}';
+    }
+
+    /**
+     * Worker ID uniquely identifies a worker.
+     */
+    @Override
+    public boolean equals(Object obj) {
+
+        if (this == obj) {
+            return true;
+        }
+
+        if (!(obj instanceof WorkerInfo)) {
+            return false;
+        }
+
+        WorkerInfo other =
+                (WorkerInfo) obj;
+
+        return workerId == other.workerId;
     }
 
     @Override
-    public String toString() {
-        return "Worker " + workerId + " | JAC = " + jac;
+    public int hashCode() {
+        return Objects.hash(workerId);
     }
 }
