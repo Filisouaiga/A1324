@@ -4,11 +4,6 @@
  */
 package boostrap;
 
-/**
- *
- * @author janth
- */
-
 import com.example.cs324_a1.common.WorkerInfo;
 import com.example.cs324_a1.rmi.BootstrapService;
 import java.rmi.RemoteException;
@@ -32,24 +27,18 @@ public class BootstrapNode
     public static final String SERVICE_NAME =
             "BootstrapService";
 
-    // Stores currently active workers
     private final Map<Integer, WorkerInfo> activeWorkers =
             new ConcurrentHashMap<>();
 
-    // Stores the last heartbeat time for each worker
     private final Map<Integer, Long> lastHeartbeat =
             new ConcurrentHashMap<>();
 
     private final Random random =
             new Random();
 
-    // Worker is considered inactive after 30 seconds
     private static final long HEARTBEAT_TIMEOUT_MS =
             30000;
 
-    /**
-     * Create the Bootstrap Node.
-     */
     public BootstrapNode() throws RemoteException {
 
         super();
@@ -66,10 +55,7 @@ public class BootstrapNode
         cleaner.start();
     }
 
-    // =========================================================
     // REGISTER WORKER
-    // =========================================================
-
     @Override
     public boolean registerWorker(WorkerInfo info)
             throws RemoteException {
@@ -95,9 +81,7 @@ public class BootstrapNode
         return true;
     }
 
-    // =========================================================
     // UNREGISTER WORKER
-    // =========================================================
 
     @Override
     public void unregisterWorker(int workerId)
@@ -112,9 +96,7 @@ public class BootstrapNode
         );
     }
 
-    // =========================================================
     // ACTIVE WORKERS
-    // =========================================================
 
     @Override
     public List<WorkerInfo> getActiveWorkers()
@@ -125,9 +107,7 @@ public class BootstrapNode
         );
     }
 
-    // =========================================================
     // RANDOM WORKER
-    // =========================================================
 
     @Override
     public WorkerInfo getRandomWorker()
@@ -147,9 +127,7 @@ public class BootstrapNode
         );
     }
 
-    // =========================================================
     // HEARTBEAT
-    // =========================================================
 
     @Override
     public void heartbeat(int workerId)
@@ -164,9 +142,7 @@ public class BootstrapNode
         }
     }
 
-    // =========================================================
     // ACTIVE WORKER COUNT
-    // =========================================================
 
     @Override
     public int getActiveCount()
@@ -175,9 +151,7 @@ public class BootstrapNode
         return activeWorkers.size();
     }
 
-    // =========================================================
     // REMOVE DEAD WORKERS
-    // =========================================================
 
     private void cleanupDeadWorkers() {
 
@@ -229,9 +203,7 @@ public class BootstrapNode
         }
     }
 
-    // =========================================================
     // MAIN
-    // =========================================================
 
     public static void main(String[] args) {
 
