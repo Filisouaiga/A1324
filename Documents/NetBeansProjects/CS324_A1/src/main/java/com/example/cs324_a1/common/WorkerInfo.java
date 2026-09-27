@@ -4,204 +4,141 @@
  */
 package com.example.cs324_a1.common;
 
-/**
- *
- * @author janth
- */
-
 import java.io.Serializable;
 import java.util.Objects;
 
-/**
- * Information about a worker in the distributed system.
- *
- * Combines:
- * - Worker identity and RMI connection information
- * - Job Allocation Counter (JAC) for leader election
- */
 public class WorkerInfo implements Serializable {
 
     private static final long serialVersionUID = 1L;
-
-    // =========================================================
-    // WORKER / RMI INFORMATION
-    // =========================================================
-
     private final int workerId;
     private final String host;
     private final int port;
     private final String rmiName;
-
-    // =========================================================
-    // PERSON 2 - JOB ALLOCATION COUNTER
-    // =========================================================
-
     private int jac;
 
-    // =========================================================
-    // CONSTRUCTORS
-    // =========================================================
-
-    /**
-     * Creates a worker with JAC starting at 0.
-     * Used when a normal worker joins the distributed system.
-     */
-    public WorkerInfo(
-            int workerId,
-            String host,
-            int port,
-            String rmiName) {
+    public WorkerInfo(int workerId, String host, int port, String rmiName) {
 
         this(workerId, host, port, rmiName, 0);
     }
 
-    /**
-     * Creates a worker with a specified JAC.
-     * Useful for election testing.
-     */
-    public WorkerInfo(
-            int workerId,
-            String host,
-            int port,
-            String rmiName,
-            int jac) {
+    public WorkerInfo(int workerId,String host,int port,String rmiName,int jac) {
+
+        if (workerId < 0) {
+            throw new IllegalArgumentException("Worker ID cannot be negative.");
+        }
+
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("Worker host cannot be empty.");
+        }
+
+        if (port <= 0 || port > 65535) {
+            throw new IllegalArgumentException("Invalid worker port: " + port);
+        }
+
+        if (rmiName == null || rmiName.isBlank()) {
+            throw new IllegalArgumentException("RMI name cannot be empty.");
+        }
 
         this.workerId = workerId;
         this.host = host;
         this.port = port;
         this.rmiName = rmiName;
-        this.jac = Math.max(0, jac);
+
+        this.jac = Math.max(0,jac);
     }
 
-    /**
-     * Keeps compatibility with the original Person 2 tests.
-     *
-     * This constructor should only be used for local/testing
-     * situations where RMI information is not required.
-     */
-    public WorkerInfo(int workerId, int jac) {
+    public WorkerInfo(
+            int workerId,
+            int jac) {
 
-        this(
-                workerId,
-                "localhost",
-                1100 + workerId,
-                "WorkerService-" + workerId,
-                jac
-        );
+        this(workerId, "localhost", 1100 + workerId, "WorkerService-" + workerId, jac);
     }
 
-    // =========================================================
-    // WORKER ID
-    // =========================================================
-
-    /**
-     * Person 2 compatibility method.
-     */
     public int getWorkerId() {
+
         return workerId;
     }
 
-    /**
-     * Person 1 compatibility method.
-     */
     public int getId() {
+
         return workerId;
     }
-
-    // =========================================================
-    // RMI INFORMATION
-    // =========================================================
 
     public String getHost() {
+
         return host;
     }
 
     public int getPort() {
+
         return port;
     }
 
     public String getRmiName() {
+
         return rmiName;
     }
 
-    /**
-     * Full RMI lookup URL.
-     *
-     * Example:
-     * rmi://localhost:1101/WorkerService-1
-     */
     public String getRmiUrl() {
 
-        return "rmi://"
-                + host
-                + ":"
-                + port
-                + "/"
-                + rmiName;
+        return "rmi://" + host + ":" + port + "/" + rmiName;
     }
 
-    // =========================================================
-    // JAC
-    // =========================================================
-
     public synchronized int getJac() {
+
         return jac;
     }
 
-    /**
-     * Increase JAC when this worker, while acting as coordinator,
-     * assigns work to another worker.
-     */
     public synchronized void incrementJac() {
 
         jac++;
 
-        System.out.println(
-                "[JAC] Worker "
-                + workerId
-                + " JAC increased to "
-                + jac
-        );
+        System.out.println("[JAC] Worker " + workerId + " JAC increased to " + jac );
     }
 
-    // =========================================================
-    // OBJECT METHODS
-    // =========================================================
+    public synchronized void setJac(
+            int jac) {
 
-    @Override
-    public synchronized String toString() {
+        if (jac < 0) {
 
-        return "WorkerInfo{"
-                + "id=" + workerId
-                + ", host=" + host
-                + ", port=" + port
-                + ", rmiName=" + rmiName
-                + ", JAC=" + jac
-                + '}';
+            throw new IllegalArgumentException("JAC cannot be negative.");
+        }
+
+        this.jac = jac;
     }
 
-    /**
-     * Worker ID uniquely identifies a worker.
-     */
+    public synchronized void resetJac() {
+
+        jac = 0;
+    }
+
     @Override
     public boolean equals(Object obj) {
 
         if (this == obj) {
+
             return true;
         }
 
         if (!(obj instanceof WorkerInfo)) {
+
             return false;
         }
 
-        WorkerInfo other =
-                (WorkerInfo) obj;
+        WorkerInfo other = (WorkerInfo) obj;
 
         return workerId == other.workerId;
     }
 
     @Override
     public int hashCode() {
+
         return Objects.hash(workerId);
+    }
+
+    @Override
+    public synchronized String toString() {
+
+        return "WorkerInfo{" + "id=" + workerId + ", host=" + host + ", port=" + port + ", rmiName=" + rmiName + ", JAC=" + jac + '}';
     }
 }

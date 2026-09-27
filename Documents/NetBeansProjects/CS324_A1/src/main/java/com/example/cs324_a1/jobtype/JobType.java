@@ -4,11 +4,6 @@
  */
 package com.example.cs324_a1.jobtype;
 
-/**
- *
- * @author janth
- */
-
 import java.io.Serializable;
 
 public enum JobType implements Serializable {

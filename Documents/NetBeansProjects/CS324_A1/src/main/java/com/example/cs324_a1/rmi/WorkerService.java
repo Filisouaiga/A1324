@@ -18,87 +18,41 @@ import java.util.List;
 
 public interface WorkerService extends Remote {
 
+    int getId() throws RemoteException;
 
-    // =========================================================
-    // WORKER INFORMATION
-    // =========================================================
+    WorkerInfo getInfo() throws RemoteException;
 
-    int getId()
-            throws RemoteException;
+    String getStatus() throws RemoteException;
 
-    int getJac()
-            throws RemoteException;
+    void addNeighbour(WorkerInfo neighbour) throws RemoteException;
 
-    WorkerInfo getInfo()
-            throws RemoteException;
+    List<WorkerInfo> getNeighbours() throws RemoteException;
 
-    String getStatus()
-            throws RemoteException;
+    String ping( String message) throws RemoteException;
 
+    int getJac() throws RemoteException;
 
-    // =========================================================
-    // NETWORK
-    // =========================================================
+    void startElection() throws RemoteException;
 
-    void addNeighbour(
-            WorkerInfo neighbour)
-            throws RemoteException;
+    void receiveElection(ElectionMessage message, int senderId) throws RemoteException;
 
-    List<WorkerInfo> getNeighbours()
-            throws RemoteException;
+    void receiveElectionReply( ElectionReply reply) throws RemoteException;
 
-    String ping(
-            String message)
-            throws RemoteException;
+    boolean hasCoordinator() throws RemoteException;
 
+    boolean isCoordinator() throws RemoteException;
 
-    // =========================================================
-    // ELECTION
-    // =========================================================
+    int getCoordinatorId() throws RemoteException;
 
-    void startElection()
-            throws RemoteException;
+    int getCoordinatorTerm() throws RemoteException;
 
-    boolean hasCoordinator()
-            throws RemoteException;
+    void receiveCoordinator(CoordinatorMessage message, int senderId) throws RemoteException;
 
-    boolean isCoordinator()
-            throws RemoteException;
+    void receiveTermEnd(TermEndMessage message, int senderId) throws RemoteException;
 
-    void receiveElection(
-            ElectionMessage message,
-            int senderId)
-            throws RemoteException;
+    int getProcessedElectionCount() throws RemoteException;
 
-    void receiveElectionReply(
-            ElectionReply reply)
-            throws RemoteException;
+    JobResult submitJob(JobRequest request) throws RemoteException;
 
-
-    // =========================================================
-    // COORDINATOR
-    // =========================================================
-
-    void receiveCoordinator(
-            CoordinatorMessage message,
-            int senderId)
-            throws RemoteException;
-
-    void receiveTermEnd(
-            TermEndMessage message,
-            int senderId)
-            throws RemoteException;
-
-
-    // =========================================================
-    // DISTRIBUTED JOBS
-    // =========================================================
-
-    JobResult submitJob(
-            JobRequest request)
-            throws RemoteException;
-
-    JobResult executeSubJob(
-            JobRequest request)
-            throws RemoteException;
+    JobResult executeSubJob(JobRequest request) throws RemoteException;
 }

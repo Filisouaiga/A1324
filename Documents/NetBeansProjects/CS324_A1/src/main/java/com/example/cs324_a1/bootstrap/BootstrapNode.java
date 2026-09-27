@@ -2,10 +2,11 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
-package boostrap;
+package com.example.cs324_a1.bootstrap;
 
 import com.example.cs324_a1.common.WorkerInfo;
 import com.example.cs324_a1.rmi.BootstrapService;
+
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -16,46 +17,43 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class BootstrapNode
-        extends UnicastRemoteObject
-        implements BootstrapService {
+public class BootstrapNode extends UnicastRemoteObject implements BootstrapService {
 
     private static final long serialVersionUID = 1L;
 
+    // Default RMI settings
     public static final int DEFAULT_PORT = 1099;
+    public static final String SERVICE_NAME = "BootstrapService";
 
-    public static final String SERVICE_NAME =
-            "BootstrapService";
+    // Worker heartbeat timeout
+    private static final long HEARTBEAT_TIMEOUT_MS = 30000;
 
+    // Stores active workers
     private final Map<Integer, WorkerInfo> activeWorkers =
             new ConcurrentHashMap<>();
 
+    // Stores each worker's last heartbeat
     private final Map<Integer, Long> lastHeartbeat =
             new ConcurrentHashMap<>();
 
-    private final Random random =
-            new Random();
+    // Used to select a random worker
+    private final Random random = new Random();
 
-    private static final long HEARTBEAT_TIMEOUT_MS =
-            30000;
-
+    // Creates the Bootstrap Node
     public BootstrapNode() throws RemoteException {
-
         super();
 
-        // Background thread removes workers
-        // that stop sending heartbeats.
-        Thread cleaner =
-                new Thread(
-                        this::cleanupDeadWorkers,
-                        "Bootstrap-Cleaner"
-                );
+        // Start background worker cleanup
+        Thread cleaner = new Thread(
+                this::cleanupDeadWorkers,
+                "Bootstrap-Cleaner"
+        );
 
         cleaner.setDaemon(true);
         cleaner.start();
     }
 
-    // REGISTER WORKER
+    // Register a new worker
     @Override
     public boolean registerWorker(WorkerInfo info)
             throws RemoteException {
@@ -64,10 +62,7 @@ public class BootstrapNode
             return false;
         }
 
-        activeWorkers.put(
-                info.getId(),
-                info
-        );
+        activeWorkers.put(info.getId(), info);
 
         lastHeartbeat.put(
                 info.getId(),
@@ -81,8 +76,7 @@ public class BootstrapNode
         return true;
     }
 
-    // UNREGISTER WORKER
-
+    // Remove a worker
     @Override
     public void unregisterWorker(int workerId)
             throws RemoteException {
@@ -96,8 +90,7 @@ public class BootstrapNode
         );
     }
 
-    // ACTIVE WORKERS
-
+    // Return all active workers
     @Override
     public List<WorkerInfo> getActiveWorkers()
             throws RemoteException {
@@ -107,8 +100,7 @@ public class BootstrapNode
         );
     }
 
-    // RANDOM WORKER
-
+    // Return a random active worker
     @Override
     public WorkerInfo getRandomWorker()
             throws RemoteException {
@@ -127,8 +119,7 @@ public class BootstrapNode
         );
     }
 
-    // HEARTBEAT
-
+    // Update a worker's heartbeat
     @Override
     public void heartbeat(int workerId)
             throws RemoteException {
@@ -142,8 +133,7 @@ public class BootstrapNode
         }
     }
 
-    // ACTIVE WORKER COUNT
-
+    // Return the number of active workers
     @Override
     public int getActiveCount()
             throws RemoteException {
@@ -151,8 +141,7 @@ public class BootstrapNode
         return activeWorkers.size();
     }
 
-    // REMOVE DEAD WORKERS
-
+    // Remove workers that stop sending heartbeats
     private void cleanupDeadWorkers() {
 
         while (true) {
@@ -168,6 +157,7 @@ public class BootstrapNode
                 List<Integer> toRemove =
                         new ArrayList<>();
 
+                // Find timed-out workers
                 for (Map.Entry<Integer, Long> entry
                         : lastHeartbeat.entrySet()) {
 
@@ -183,10 +173,10 @@ public class BootstrapNode
                     }
                 }
 
+                // Remove timed-out workers
                 for (int workerId : toRemove) {
 
                     activeWorkers.remove(workerId);
-
                     lastHeartbeat.remove(workerId);
 
                     System.out.println(
@@ -197,41 +187,17 @@ public class BootstrapNode
 
             } catch (InterruptedException e) {
 
+                // Stop the cleanup thread
                 Thread.currentThread().interrupt();
                 break;
             }
         }
     }
 
-    // MAIN
-
+    // Start the Bootstrap RMI service
     public static void main(String[] args) {
 
-        int port =
-                DEFAULT_PORT;
-
-        // Allow optional custom bootstrap port
-        if (args.length > 0) {
-
-            try {
-
-                port =
-                        Integer.parseInt(
-                                args[0]
-                        );
-
-            } catch (NumberFormatException ignored) {
-
-                System.out.println(
-                        "[Bootstrap] Invalid port. "
-                        + "Using default port "
-                        + DEFAULT_PORT
-                );
-
-                port =
-                        DEFAULT_PORT;
-            }
-        }
+        int port = DEFAULT_PORT;
 
         try {
 
@@ -239,7 +205,7 @@ public class BootstrapNode
 
             try {
 
-                // Try creating the RMI registry
+                // Create the RMI registry
                 registry =
                         LocateRegistry.createRegistry(
                                 port
@@ -253,7 +219,7 @@ public class BootstrapNode
 
             } catch (RemoteException e) {
 
-                // Registry may already exist
+                // Use the existing RMI registry
                 registry =
                         LocateRegistry.getRegistry(
                                 port
@@ -266,11 +232,11 @@ public class BootstrapNode
                 );
             }
 
-            // Create Bootstrap Node
+            // Create the Bootstrap Node
             BootstrapNode node =
                     new BootstrapNode();
 
-            // Bind it to the registry
+            // Register Bootstrap with RMI
             registry.rebind(
                     SERVICE_NAME,
                     node
@@ -286,11 +252,12 @@ public class BootstrapNode
                     "[Bootstrap] Ready - waiting for workers..."
             );
 
-            // Keep process running
+            // Keep Bootstrap running
             Thread.currentThread().join();
 
         } catch (Exception e) {
 
+            // Handle startup errors
             System.err.println(
                     "[Bootstrap] Failed to start: "
                     + e.getMessage()

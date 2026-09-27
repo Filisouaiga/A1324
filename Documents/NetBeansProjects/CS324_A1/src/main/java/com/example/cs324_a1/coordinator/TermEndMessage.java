@@ -4,17 +4,9 @@
  */
 package com.example.cs324_a1.coordinator;
 
-/**
- *
- * @author janth
- */
-
 import java.io.Serializable;
 import java.util.UUID;
 
-/**
- * Message sent when a coordinator completes its term.
- */
 public class TermEndMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -45,9 +37,6 @@ public class TermEndMessage implements Serializable {
     @Override
     public String toString() {
 
-        return "TermEndMessage{"
-                + "coordinatorId=" + coordinatorId
-                + ", term=" + term
-                + '}';
+        return "TermEndMessage{" + "coordinatorId=" + coordinatorId + '}';
     }
 }

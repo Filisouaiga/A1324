@@ -4,67 +4,40 @@
  */
 package com.example.cs324_a1.jobtype;
 
-/**
- *
- * @author janth
- */
-
 import java.util.List;
 
 public class JobProcessor {
 
-
     public long process(JobRequest request) {
 
         if (request == null) {
-            throw new IllegalArgumentException(
-                    "Job request cannot be null."
-            );
+            throw new IllegalArgumentException("Job request cannot be null.");
         }
 
         switch (request.getJobType()) {
 
             case MAX:
-                return calculateMax(
-                        request.getNumbers()
-                );
+                return calculateMax(request.getNumbers());
 
             case PRIMESUM:
-                return calculatePrimeSum(
-                        request.getStart(),
-                        request.getEnd()
-                );
+                return calculatePrimeSum(request.getStart(), request.getEnd());
 
             case PRIMECOUNT:
-                return calculatePrimeCount(
-                        request.getNumbers()
-                );
+                return calculatePrimeCount(request.getNumbers());
 
             default:
-                throw new IllegalArgumentException(
-                        "Unsupported job type."
-                );
+                throw new IllegalArgumentException("Unsupported job type.");
         }
     }
 
+    private long calculateMax(List<Integer> numbers) {
 
-    // =========================================================
-    // MAX
-    // =========================================================
+        if (numbers == null || numbers.isEmpty()) {
 
-    private long calculateMax(
-            List<Integer> numbers) {
-
-        if (numbers == null
-                || numbers.isEmpty()) {
-
-            throw new IllegalArgumentException(
-                    "MAX requires at least one number."
-            );
+            throw new IllegalArgumentException("MAX requires at least one number.");
         }
 
-        int max =
-                numbers.get(0);
+        int max = numbers.get(0);
 
         for (int number : numbers) {
 
@@ -76,26 +49,15 @@ public class JobProcessor {
         return max;
     }
 
-
-    // =========================================================
-    // PRIME SUM
-    // =========================================================
-
-    private long calculatePrimeSum(
-            int start,
-            int end) {
+    private long calculatePrimeSum(int start, int end) {
 
         if (start > end) {
-            throw new IllegalArgumentException(
-                    "Start cannot be greater than end."
-            );
+            throw new IllegalArgumentException("Start cannot be greater than end.");
         }
 
         long sum = 0;
 
-        for (int number = start;
-                number <= end;
-                number++) {
+        for (int number = start; number <= end; number++) {
 
             if (isPrime(number)) {
                 sum += number;
@@ -104,11 +66,6 @@ public class JobProcessor {
 
         return sum;
     }
-
-
-    // =========================================================
-    // PRIME COUNT
-    // =========================================================
 
     private long calculatePrimeCount(
             List<Integer> numbers) {
@@ -129,11 +86,6 @@ public class JobProcessor {
         return count;
     }
 
-
-    // =========================================================
-    // PRIME CHECK
-    // =========================================================
-
     private boolean isPrime(int number) {
 
         if (number < 2) {
@@ -148,9 +100,7 @@ public class JobProcessor {
             return false;
         }
 
-        for (int i = 3;
-                (long) i * i <= number;
-                i += 2) {
+        for (int i = 3; (long) i * i <= number; i += 2) {
 
             if (number % i == 0) {
                 return false;

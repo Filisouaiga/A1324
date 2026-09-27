@@ -4,32 +4,17 @@
  */
 package com.example.cs324_a1.election;
 
-/**
- *
- * @author janth
- */
-
 import com.example.cs324_a1.common.WorkerInfo;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Carries election information between workers using Java RMI.
- *
- * @author janth
- */
 public class ElectionMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
-
-    // Unique ID for this election
     private final String electionId;
-
-    // Worker that started the election
     private final int initiatorId;
-
-    // Workers discovered during the election
+    
     private final List<WorkerInfo> candidates;
 
     public ElectionMessage(String electionId, int initiatorId) {
@@ -50,7 +35,6 @@ public class ElectionMessage implements Serializable {
         return candidates;
     }
 
-    // Add worker only if it is not already in the list
     public void addCandidate(WorkerInfo worker) {
 
         if (worker == null) {
@@ -67,7 +51,6 @@ public class ElectionMessage implements Serializable {
         candidates.add(worker);
     }
 
-    // Check whether a worker is already in this election
     public boolean containsCandidate(int workerId) {
 
         for (WorkerInfo worker : candidates) {
@@ -80,7 +63,6 @@ public class ElectionMessage implements Serializable {
         return false;
     }
 
-    // Number of workers discovered
     public int getCandidateCount() {
         return candidates.size();
     }
@@ -88,10 +70,6 @@ public class ElectionMessage implements Serializable {
     @Override
     public String toString() {
 
-        return "ElectionMessage{"
-                + "electionId='" + electionId + '\''
-                + ", initiatorId=" + initiatorId
-                + ", candidates=" + candidates.size()
-                + '}';
+        return "ElectionMessage{" + "electionId='" + electionId + '\'' + ", initiatorId=" + initiatorId + ", candidates=" + candidates.size() + '}';
     }
 }

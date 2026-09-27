@@ -4,40 +4,18 @@
  */
 package com.example.cs324_a1.election;
 
-/**
- *
- * @author janth
- */
-
 import com.example.cs324_a1.common.WorkerInfo;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Reply sent back during a leader election.
- *
- * Each worker returns the active workers it discovered
- * back towards the worker that started the election.
- *
- * @author janth
- */
 public class ElectionReply implements Serializable {
 
     private static final long serialVersionUID = 1L;
-
-    // Election this reply belongs to
     private final String electionId;
-
-    // Worker sending this reply
     private final int senderId;
 
-    // Workers discovered through this part of the network
     private final List<WorkerInfo> candidates;
-
-    // =========================================================
-    // CONSTRUCTOR
-    // =========================================================
 
     public ElectionReply(String electionId, int senderId) {
 
@@ -45,10 +23,6 @@ public class ElectionReply implements Serializable {
         this.senderId = senderId;
         this.candidates = new ArrayList<>();
     }
-
-    // =========================================================
-    // GETTERS
-    // =========================================================
 
     public String getElectionId() {
         return electionId;
@@ -62,21 +36,15 @@ public class ElectionReply implements Serializable {
         return candidates;
     }
 
-    // =========================================================
-    // ADD ONE CANDIDATE
-    // =========================================================
-
     public void addCandidate(WorkerInfo worker) {
 
         if (worker == null) {
             return;
         }
 
-        // Prevent duplicate workers
         for (WorkerInfo existing : candidates) {
 
-            if (existing.getWorkerId()
-                    == worker.getWorkerId()) {
+            if (existing.getWorkerId() == worker.getWorkerId()) {
 
                 return;
             }
@@ -84,10 +52,6 @@ public class ElectionReply implements Serializable {
 
         candidates.add(worker);
     }
-
-    // =========================================================
-    // ADD MULTIPLE CANDIDATES
-    // =========================================================
 
     public void addCandidates(List<WorkerInfo> workers) {
 
@@ -100,25 +64,13 @@ public class ElectionReply implements Serializable {
         }
     }
 
-    // =========================================================
-    // CANDIDATE COUNT
-    // =========================================================
-
     public int getCandidateCount() {
         return candidates.size();
     }
 
-    // =========================================================
-    // TO STRING
-    // =========================================================
-
     @Override
     public String toString() {
 
-        return "ElectionReply{"
-                + "electionId='" + electionId + '\''
-                + ", senderId=" + senderId
-                + ", candidates=" + candidates.size()
-                + '}';
+        return "ElectionReply{" + "electionId='" + electionId + '\'' + ", senderId=" + senderId + ", candidates=" + candidates.size() + '}';
     }
 }

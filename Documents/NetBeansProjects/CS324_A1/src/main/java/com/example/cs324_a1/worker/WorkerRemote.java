@@ -4,11 +4,6 @@
  */
 package com.example.cs324_a1.worker;
 
-/**
- *
- * @author janth
- */
-
 import com.example.cs324_a1.coordinator.TermEndMessage;
 import com.example.cs324_a1.election.CoordinatorMessage;
 import com.example.cs324_a1.election.ElectionMessage;
@@ -39,7 +34,6 @@ public interface WorkerRemote extends Remote {
             int senderId)
             throws RemoteException;
 
-    // Receive notification that a coordinator term ended
     void receiveTermEnd(
             TermEndMessage message,
             int senderId)

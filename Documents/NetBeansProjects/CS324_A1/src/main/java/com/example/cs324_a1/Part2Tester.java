@@ -4,1038 +4,414 @@
  */
 package com.example.cs324_a1;
 
-/**
- *
- * @author janth
- */
-
 import com.example.cs324_a1.common.WorkerInfo;
+import com.example.cs324_a1.election.ElectionMessage;
 import com.example.cs324_a1.jobtype.JobRequest;
-import com.example.cs324_a1.jobtype.JobResult;
 import com.example.cs324_a1.jobtype.JobType;
 import com.example.cs324_a1.rmi.BootstrapService;
 import com.example.cs324_a1.rmi.WorkerService;
 
 import java.rmi.Naming;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 
 public class Part2Tester {
 
-    private static final String BOOTSTRAP_URL =
-            "rmi://localhost:1099/BootstrapService";
-
-    private static int passed = 0;
-    private static int failed = 0;
-
+    private static final String BOOTSTRAP_URL = "rmi://localhost:1099/BootstrapService";
+    private static int passed, failed;
 
     public static void main(String[] args) {
-
         try {
+            BootstrapService bootstrap = (BootstrapService) Naming.lookup(BOOTSTRAP_URL);
+            List<WorkerInfo> workers = bootstrap.getActiveWorkers();
 
-            System.out.println(
-                    "=========================================="
-            );
-            System.out.println(
-                    " CS324 MERGED DISTRIBUTED SYSTEM TESTER"
-            );
-            System.out.println(
-                    "=========================================="
-            );
+            System.out.println("==================================================");
+            System.out.println(" CS324 PERSON 2 - LEADER ELECTION & COORDINATOR");
+            System.out.println("==================================================");
 
-
-            // =================================================
-            // TEST 1 - CONNECT TO BOOTSTRAP
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 1: BOOTSTRAP =========="
-            );
-
-            BootstrapService bootstrap =
-                    (BootstrapService)
-                            Naming.lookup(
-                                    BOOTSTRAP_URL
-                            );
-
-            pass(
-                    "Connected to Bootstrap."
-            );
-
-
-            // =================================================
-            // TEST 2 - ACTIVE WORKERS
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 2: ACTIVE WORKERS =========="
-            );
-
-            List<WorkerInfo> workers =
-                    bootstrap.getActiveWorkers();
-
-            System.out.println(
-                    "Active workers = "
-                    + workers.size()
-            );
-
-            if (workers.isEmpty()) {
-
-                fail(
-                        "No workers are registered."
-                );
-
-                printSummary();
+            if (workers.size() < 4) {
+                fail("SETUP", "At least 4 active workers are required; found " + workers.size());
+                summary();
                 return;
             }
 
-            if (workers.size() >= 4) {
+            workers.sort(Comparator.comparingInt(WorkerInfo::getId));
+            ensureNoCoordinator(workers);
 
-                pass(
-                        "Four or more workers are registered."
-                );
+            // TEST 1
+            heading(1, "NORMAL ELECTION");
+            WorkerService initiator = getWorker(workers.get(0));
+            int termBefore = maxTerm(workers);
+            initiator.startElection();
+            int coordinatorId = waitForAgreement(bootstrap, 8000);
+            if (coordinatorId != -1 && maxTerm(bootstrap.getActiveWorkers()) > termBefore)
+                pass("A real election elected Worker " + coordinatorId + ".");
+            else
+                fail("TEST 1", "Election did not produce coordinator agreement in a new term.");
 
+            // TEST 2
+            heading(2, "ELECTION THROUGH MULTIPLE NEIGHBOURS");
+            workers = bootstrap.getActiveWorkers();
+            WorkerInfo multiHopTarget = findNonNeighbourReachableTarget(workers, initiator.getId());
+            if (multiHopTarget == null) {
+                fail("TEST 2", "Current topology has no worker beyond the initiator's immediate neighbours.");
             } else {
-
-                fail(
-                        "Expected 4 workers, but found "
-                        + workers.size()
-                );
-            }
-
-
-            // =================================================
-            // TEST 3 - RMI COMMUNICATION
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 3: RMI =========="
-            );
-
-            boolean allReachable = true;
-
-            for (WorkerInfo info : workers) {
-
-                try {
-
-                    WorkerService worker =
-                            getWorker(
-                                    info
-                            );
-
-                    String reply =
-                            worker.ping(
-                                    "Tester"
-                            );
-
-                    System.out.println(
-                            "Worker "
-                            + worker.getId()
-                            + " replied: "
-                            + reply
-                    );
-
-                } catch (Exception e) {
-
-                    allReachable = false;
-
-                    System.out.println(
-                            "Worker "
-                            + info.getId()
-                            + " could not be reached."
-                    );
-                }
-            }
-
-            if (allReachable) {
-
-                pass(
-                        "All workers are reachable through RMI."
-                );
-
-            } else {
-
-                fail(
-                        "One or more workers could not be reached."
-                );
-            }
-
-
-            // =================================================
-            // TEST 4 - NETWORK NEIGHBOURS
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 4: NETWORK =========="
-            );
-
-            for (WorkerInfo info : workers) {
-
-                WorkerService worker =
-                        getWorker(
-                                info
-                        );
-
-                List<WorkerInfo> neighbours =
-                        worker.getNeighbours();
-
-                System.out.println(
-                        "Worker "
-                        + worker.getId()
-                        + " has "
-                        + neighbours.size()
-                        + " neighbour(s)."
-                );
-
-                for (WorkerInfo neighbour : neighbours) {
-
-                    System.out.println(
-                            "   -> Worker "
-                            + neighbour.getId()
-                    );
-                }
-            }
-
-            pass(
-                    "Worker neighbour information retrieved."
-            );
-
-
-            // =================================================
-            // TEST 5 - INITIAL WORKER STATE
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 5: WORKER STATE =========="
-            );
-
-            printWorkers(
-                    workers
-            );
-
-
-            // =================================================
-            // TEST 6 - ELECTION
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 6: ELECTION =========="
-            );
-
-            WorkerService coordinator =
-                    findCoordinator(
-                            workers
-                    );
-
-            if (coordinator == null) {
-
-                System.out.println(
-                        "No coordinator detected."
-                );
-
-                WorkerInfo initiatorInfo =
-                        workers.get(0);
-
-                WorkerService initiator =
-                        getWorker(
-                                initiatorInfo
-                        );
-
-                System.out.println(
-                        "Worker "
-                        + initiator.getId()
-                        + " starts the election."
-                );
-
+                endCurrentTermForTest(workers);
+                int before = getWorker(multiHopTarget).getProcessedElectionCount();
                 initiator.startElection();
+                int agreed = waitForAgreement(bootstrap, 8000);
+                int after = getWorker(multiHopTarget).getProcessedElectionCount();
 
-                coordinator =
-                        waitForCoordinator(
-                                workers,
-                                5000
-                        );
+                if (agreed != -1 && after == before + 1)
+                    pass("Worker " + multiHopTarget.getId()
+                            + " processed the election although it is not an immediate neighbour of Worker "
+                            + initiator.getId() + ".");
+                else
+                    fail("TEST 2", "Multi-hop election propagation was not observed.");
             }
 
-
-            if (coordinator == null) {
-
-                fail(
-                        "No coordinator was elected."
-                );
-
-                printSummary();
-                return;
-
+            // TEST 3
+            heading(3, "DUPLICATE ELECTION MESSAGE");
+            workers = bootstrap.getActiveWorkers();
+            WorkerService duplicateTarget = getWorker(workers.get(0));
+            int senderId = chooseNeighbourSender(duplicateTarget);
+            if (senderId == -1) {
+                fail("TEST 3", "Target worker has no neighbour that can act as sender.");
             } else {
+                String electionId = "duplicate-test-" + UUID.randomUUID();
+                ElectionMessage duplicate = new ElectionMessage(electionId, senderId);
+                int before = duplicateTarget.getProcessedElectionCount();
 
-                pass(
-                        "Coordinator elected: Worker "
-                        + coordinator.getId()
-                );
+                duplicateTarget.receiveElection(duplicate, senderId);
+                Thread.sleep(500);
+                int afterFirst = duplicateTarget.getProcessedElectionCount();
+
+                duplicateTarget.receiveElection(duplicate, senderId);
+                Thread.sleep(500);
+                int afterSecond = duplicateTarget.getProcessedElectionCount();
+
+                if (afterFirst == before + 1 && afterSecond == afterFirst)
+                    pass("The first ELECTION was processed once and the duplicate was ignored.");
+                else
+                    fail("TEST 3", "Duplicate ELECTION changed the unique processed-election count.");
             }
 
+            // Restore a clean election state if duplicate test created no coordinator.
+            workers = bootstrap.getActiveWorkers();
+            if (waitForAgreement(bootstrap, 1500) == -1) {
+                WorkerService w = getWorker(workers.get(0));
+                if (!w.hasCoordinator()) w.startElection();
+                waitForAgreement(bootstrap, 8000);
+            }
 
-            // =================================================
-            // TEST 7 - COORDINATOR AGREEMENT
-            // =================================================
+            // TEST 4 + TEST 5 use the same genuine election.
+            heading(4, "LOWEST JAC SELECTION");
+            workers = bootstrap.getActiveWorkers();
+            endCurrentTermForTest(workers);
+            CandidateExpectation expected = expectedWinner(workers);
+            getWorker(workers.get(0)).startElection();
+            int actual = waitForAgreement(bootstrap, 8000);
 
-            System.out.println();
-            System.out.println(
-                    "========== TEST 7: COORDINATOR AGREEMENT =========="
-            );
+            if (actual == expected.workerId)
+                pass("Lowest-JAC rule selected Worker " + actual
+                        + " (JAC=" + expected.jac + ").");
+            else
+                fail("TEST 4", "Expected Worker " + expected.workerId
+                        + " from real JAC values, but coordinator was Worker " + actual + ".");
 
-            int coordinatorCount =
-                    countCoordinators(
-                            workers
-                    );
-
-            System.out.println(
-                    "Workers reporting themselves "
-                    + "as coordinator = "
-                    + coordinatorCount
-            );
-
-            if (coordinatorCount == 1) {
-
-                pass(
-                        "Exactly one coordinator is active."
-                );
-
+            heading(5, "SAME JAC - HIGHEST ID TIE BREAKER");
+            if (expected.tiedIds.size() < 2) {
+                fail("TEST 5", "No real minimum-JAC tie exists in the current worker state: "
+                        + expected.tiedIds + ". Restart workers with equal JACs to exercise this required case.");
             } else {
-
-                fail(
-                        "Expected exactly one coordinator."
-                );
+                int highest = expected.tiedIds.stream().max(Integer::compareTo).orElse(-1);
+                if (actual == highest)
+                    pass("Minimum JAC was tied by " + expected.tiedIds
+                            + "; highest ID Worker " + highest + " won.");
+                else
+                    fail("TEST 5", "Minimum-JAC tie was " + expected.tiedIds
+                            + ", but Worker " + actual + " was elected.");
             }
 
+            // TESTS 6 & 7 deliberately require a REAL worker process to become unavailable.
+            heading(6, "WORKER BECOMES UNAVAILABLE");
+            System.out.println("[ACTION REQUIRED] Stop/close the CURRENT COORDINATOR worker process now.");
+            System.out.println("The tester will wait for Bootstrap's real heartbeat timeout (up to 50 seconds).");
 
-            int firstCoordinatorId =
-                    coordinator.getId();
+            workers = bootstrap.getActiveWorkers();
+            int failedCoordinatorId = waitForAgreement(bootstrap, 3000);
+            int countBeforeFailure = workers.size();
 
-            int jacBeforeJobs =
-                    coordinator.getJac();
+            boolean removed = waitUntilWorkerRemoved(bootstrap, failedCoordinatorId, 50000);
+            if (removed && bootstrap.getActiveCount() == countBeforeFailure - 1)
+                pass("Bootstrap removed unavailable Worker " + failedCoordinatorId
+                        + " using the real heartbeat mechanism.");
+            else
+                fail("TEST 6", "Worker " + failedCoordinatorId
+                        + " was not removed by Bootstrap during the timeout.");
 
-            System.out.println(
-                    "Coordinator = Worker "
-                    + firstCoordinatorId
-            );
+            heading(7, "NEW ELECTION WHEN COORDINATOR DISAPPEARS");
+            int recoveredCoordinator = waitForAgreement(bootstrap, 20000);
+            if (removed && recoveredCoordinator != -1 && recoveredCoordinator != failedCoordinatorId)
+                pass("Remaining workers detected the lost coordinator and elected Worker "
+                        + recoveredCoordinator + ".");
+            else
+                fail("TEST 7", "No genuine recovery election/agreement followed coordinator disappearance.");
 
-            System.out.println(
-                    "Coordinator JAC before jobs = "
-                    + jacBeforeJobs
-            );
-
-
-            // =================================================
-            // TEST 8 - MAX
-            // JOB 1
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 8: MAX - JOB 1 =========="
-            );
-
-            JobRequest maxRequest =
-                    new JobRequest(
-                            JobType.MAX,
-                            Arrays.asList(
-                                    14,
-                                    88,
-                                    23,
-                                    51,
-                                    100,
-                                    9,
-                                    72,
-                                    64
-                            )
-                    );
-
-            JobResult maxResult =
-                    coordinator.submitJob(
-                            maxRequest
-                    );
-
-            System.out.println(
-                    "MAX result = "
-                    + maxResult.getResult()
-            );
-
-            if (maxResult.getResult() == 100) {
-
-                pass(
-                        "MAX result is correct."
-                );
-
+            // TEST 8
+            heading(8, "COORDINATOR AFTER FIVE JOBS");
+            workers = bootstrap.getActiveWorkers();
+            int first = waitForAgreement(bootstrap, 5000);
+            if (first == -1) {
+                fail("TEST 8", "No coordinator available for the five-job test.");
             } else {
-
-                fail(
-                        "MAX expected 100."
-                );
-            }
-
-
-            // =================================================
-            // TEST 9 - PRIMESUM
-            // JOB 2
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 9: PRIMESUM - JOB 2 =========="
-            );
-
-            coordinator =
-                    requireCoordinator(
-                            workers
-                    );
-
-            JobRequest primeSumRequest =
-                    new JobRequest(
-                            JobType.PRIMESUM,
-                            1,
-                            10
-                    );
-
-            JobResult primeSumResult =
-                    coordinator.submitJob(
-                            primeSumRequest
-                    );
-
-            System.out.println(
-                    "PRIMESUM result = "
-                    + primeSumResult.getResult()
-            );
-
-            // 2 + 3 + 5 + 7 = 17
-            if (primeSumResult.getResult() == 17) {
-
-                pass(
-                        "PRIMESUM result is correct."
-                );
-
-            } else {
-
-                fail(
-                        "PRIMESUM expected 17."
-                );
-            }
-
-
-            // =================================================
-            // TEST 10 - PRIMECOUNT
-            // JOB 3
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 10: PRIMECOUNT - JOB 3 =========="
-            );
-
-            coordinator =
-                    requireCoordinator(
-                            workers
-                    );
-
-            JobRequest primeCountRequest =
-                    new JobRequest(
-                            JobType.PRIMECOUNT,
-                            Arrays.asList(
-                                    2,
-                                    3,
-                                    4,
-                                    5,
-                                    6,
-                                    7,
-                                    8,
-                                    9,
-                                    10,
-                                    11
-                            )
-                    );
-
-            JobResult primeCountResult =
-                    coordinator.submitJob(
-                            primeCountRequest
-                    );
-
-            System.out.println(
-                    "PRIMECOUNT result = "
-                    + primeCountResult.getResult()
-            );
-
-            // Prime numbers: 2, 3, 5, 7, 11
-            if (primeCountResult.getResult() == 5) {
-
-                pass(
-                        "PRIMECOUNT result is correct."
-                );
-
-            } else {
-
-                fail(
-                        "PRIMECOUNT expected 5."
-                );
-            }
-
-
-            // =================================================
-            // TEST 11 - JAC
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 11: JAC =========="
-            );
-
-            WorkerService firstCoordinator =
-                    findWorkerById(
-                            workers,
-                            firstCoordinatorId
-                    );
-
-            int jacAfterThreeJobs =
-                    firstCoordinator.getJac();
-
-            System.out.println(
-                    "Worker "
-                    + firstCoordinatorId
-                    + " JAC before jobs = "
-                    + jacBeforeJobs
-            );
-
-            System.out.println(
-                    "Worker "
-                    + firstCoordinatorId
-                    + " JAC after 3 jobs = "
-                    + jacAfterThreeJobs
-            );
-
-            if (jacAfterThreeJobs > jacBeforeJobs) {
-
-                pass(
-                        "Coordinator JAC increased "
-                        + "after assigning work."
-                );
-
-            } else {
-
-                fail(
-                        "Coordinator JAC did not increase."
-                );
-            }
-
-
-            // =================================================
-            // TEST 12 - JOB 4
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 12: JOB 4 =========="
-            );
-
-            coordinator =
-                    requireCoordinator(
-                            workers
-                    );
-
-            JobRequest job4 =
-                    new JobRequest(
-                            JobType.MAX,
-                            Arrays.asList(
-                                    5,
-                                    10,
-                                    15,
-                                    20,
-                                    25
-                            )
-                    );
-
-            JobResult job4Result =
-                    coordinator.submitJob(
-                            job4
-                    );
-
-            System.out.println(
-                    "Job 4 result = "
-                    + job4Result.getResult()
-            );
-
-            if (job4Result.getResult() == 25) {
-
-                pass(
-                        "Job 4 completed correctly."
-                );
-
-            } else {
-
-                fail(
-                        "Job 4 expected 25."
-                );
-            }
-
-
-            // =================================================
-            // TEST 13 - JOB 5
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 13: JOB 5 =========="
-            );
-
-            coordinator =
-                    requireCoordinator(
-                            workers
-                    );
-
-            JobRequest job5 =
-                    new JobRequest(
-                            JobType.PRIMESUM,
-                            1,
-                            20
-                    );
-
-            JobResult job5Result =
-                    coordinator.submitJob(
-                            job5
-                    );
-
-            System.out.println(
-                    "Job 5 result = "
-                    + job5Result.getResult()
-            );
-
-            // 2 + 3 + 5 + 7 + 11 + 13 + 17 + 19 = 77
-            if (job5Result.getResult() == 77) {
-
-                pass(
-                        "Job 5 completed correctly."
-                );
-
-            } else {
-
-                fail(
-                        "Job 5 expected 77."
-                );
-            }
-
-
-            // =================================================
-            // TEST 14 - SECOND ELECTION
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 14: SECOND ELECTION =========="
-            );
-
-            /*
-             * Job 5 should end the coordinator term.
-             * WorkerNode should then start another election.
-             */
-
-            WorkerService secondCoordinator =
-                    waitForCoordinator(
-                            workers,
-                            5000
-                    );
-
-            if (secondCoordinator == null) {
-
-                fail(
-                        "No coordinator after the five-job term."
-                );
-
-            } else {
-
-                pass(
-                        "Coordinator exists after re-election."
-                );
-
-                System.out.println(
-                        "New coordinator = Worker "
-                        + secondCoordinator.getId()
-                );
-            }
-
-
-            // =================================================
-            // TEST 15 - COORDINATOR AFTER TERM
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 15: NEW COORDINATOR =========="
-            );
-
-            if (secondCoordinator != null) {
-
-                int secondCoordinatorId =
-                        secondCoordinator.getId();
-
-                System.out.println(
-                        "Previous coordinator = Worker "
-                        + firstCoordinatorId
-                );
-
-                System.out.println(
-                        "Current coordinator = Worker "
-                        + secondCoordinatorId
-                );
-
-                /*
-                 * Normally the previous coordinator's JAC
-                 * increased because it assigned work to
-                 * other workers.
-                 *
-                 * The next election therefore considers
-                 * the updated JAC values.
-                 */
-                if (secondCoordinatorId
-                        != firstCoordinatorId) {
-
-                    pass(
-                            "Election used updated JAC values "
-                            + "and selected a new coordinator."
-                    );
-
-                } else {
-
-                    System.out.println(
-                            "[INFO] Same worker was elected again."
-                    );
-
-                    System.out.println(
-                            "[INFO] Check the workers' JAC values "
-                            + "before deciding whether this is wrong."
-                    );
+                WorkerService coordinator = findWorker(workers, first);
+                int oldTerm = coordinator.getCoordinatorTerm();
+
+                for (int i = 1; i <= 5; i++) {
+                    coordinator = requireCoordinator(bootstrap);
+                    coordinator.submitJob(new JobRequest(
+                            JobType.MAX, Arrays.asList(i, i + 10, i + 20, i + 30)));
+                    System.out.println("Completed real coordinator job " + i + "/5.");
+                    if (i < 5) Thread.sleep(300);
                 }
+
+                int afterFive = waitForAgreement(bootstrap, 12000);
+                int newTerm = maxTerm(bootstrap.getActiveWorkers());
+
+                if (afterFive != -1 && newTerm > oldTerm)
+                    pass("Five real jobs ended Term " + oldTerm
+                            + " and a new election established Term " + newTerm + ".");
+                else
+                    fail("TEST 8", "Five jobs did not result in a genuine new coordinator term.");
             }
 
-
-            // =================================================
-            // TEST 16 - FINAL COORDINATOR AGREEMENT
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== TEST 16: FINAL AGREEMENT =========="
-            );
-
-            int finalCoordinatorCount =
-                    countCoordinators(
-                            workers
-                    );
-
-            if (finalCoordinatorCount == 1) {
-
-                pass(
-                        "All workers reached a state with "
-                        + "one active coordinator."
-                );
-
+            // TEST 9
+            heading(9, "COORDINATOR MESSAGE PROPAGATION");
+            workers = bootstrap.getActiveWorkers();
+            int agreedCoordinator = waitForAgreement(bootstrap, 8000);
+            if (agreedCoordinator == -1) {
+                fail("TEST 9", "Workers do not all report the same coordinator.");
             } else {
+                boolean allAgree = true;
+                int agreedTerm = -1;
+                for (WorkerInfo info : workers) {
+                    WorkerService w = getWorker(info);
+                    int known = w.getCoordinatorId();
+                    int term = w.getCoordinatorTerm();
+                    if (agreedTerm == -1) agreedTerm = term;
 
-                fail(
-                        "Expected one coordinator, found "
-                        + finalCoordinatorCount
-                );
+                    System.out.println("Worker " + w.getId()
+                            + " -> coordinator=" + known + ", term=" + term);
+
+                    if (known != agreedCoordinator || term != agreedTerm)
+                        allAgree = false;
+                }
+
+                if (allAgree)
+                    pass("All " + workers.size() + " reachable workers received and agree on Coordinator Worker "
+                            + agreedCoordinator + ".");
+                else
+                    fail("TEST 9", "Coordinator ID/term is not consistent across reachable workers.");
             }
-
-
-            // =================================================
-            // FINAL WORKER STATE
-            // =================================================
-
-            System.out.println();
-            System.out.println(
-                    "========== FINAL WORKER STATE =========="
-            );
-
-            workers =
-                    bootstrap.getActiveWorkers();
-
-            printWorkers(
-                    workers
-            );
-
-
-            // =================================================
-            // SUMMARY
-            // =================================================
-
-            printSummary();
-
 
         } catch (Exception e) {
-
-            System.err.println();
-            System.err.println(
-                    "TEST ERROR: "
-                    + e.getMessage()
-            );
-
-            e.printStackTrace();
-
             failed++;
-
-            printSummary();
+            System.out.println("[FAIL] Unexpected tester error: " + e.getMessage());
+            e.printStackTrace();
         }
+
+        summary();
     }
 
-
-    // =========================================================
-    // GET REMOTE WORKER
-    // =========================================================
-
-    private static WorkerService getWorker(
-            WorkerInfo info)
-            throws Exception {
-
-        return (WorkerService)
-                Naming.lookup(
-                        info.getRmiUrl()
-                );
+    private static WorkerService getWorker(WorkerInfo info) throws Exception {
+        return (WorkerService) Naming.lookup(info.getRmiUrl());
     }
 
+    private static WorkerService findWorker(List<WorkerInfo> workers, int id) throws Exception {
+        for (WorkerInfo info : workers)
+            if (info.getId() == id) return getWorker(info);
+        return null;
+    }
 
-    // =========================================================
-    // FIND COORDINATOR
-    // =========================================================
+    private static WorkerService requireCoordinator(BootstrapService bootstrap) throws Exception {
+        int id = waitForAgreement(bootstrap, 5000);
+        if (id == -1) throw new IllegalStateException("No agreed coordinator.");
+        WorkerService worker = findWorker(bootstrap.getActiveWorkers(), id);
+        if (worker == null) throw new IllegalStateException("Coordinator is not active.");
+        return worker;
+    }
 
-    private static WorkerService findCoordinator(
-            List<WorkerInfo> workers)
-            throws Exception {
+    private static int waitForAgreement(BootstrapService bootstrap, long timeout) throws Exception {
+        long end = System.currentTimeMillis() + timeout;
+        while (System.currentTimeMillis() < end) {
+            List<WorkerInfo> workers = bootstrap.getActiveWorkers();
+            if (!workers.isEmpty()) {
+                Integer coordinator = null;
+                Integer term = null;
+                boolean agree = true;
+                int selfCoordinatorCount = 0;
+
+                for (WorkerInfo info : workers) {
+                    try {
+                        WorkerService w = getWorker(info);
+                        int known = w.getCoordinatorId();
+                        int knownTerm = w.getCoordinatorTerm();
+
+                        if (known == -1) { agree = false; break; }
+                        if (coordinator == null) {
+                            coordinator = known;
+                            term = knownTerm;
+                        } else if (known != coordinator || knownTerm != term) {
+                            agree = false;
+                            break;
+                        }
+
+                        if (w.isCoordinator()) selfCoordinatorCount++;
+                    } catch (Exception e) {
+                        agree = false;
+                        break;
+                    }
+                }
+
+                if (agree && coordinator != null && selfCoordinatorCount == 1)
+                    return coordinator;
+            }
+            Thread.sleep(200);
+        }
+        return -1;
+    }
+
+    private static int maxTerm(List<WorkerInfo> workers) throws Exception {
+        int max = 0;
+        for (WorkerInfo info : workers)
+            max = Math.max(max, getWorker(info).getCoordinatorTerm());
+        return max;
+    }
+
+    private static CandidateExpectation expectedWinner(List<WorkerInfo> workers) throws Exception {
+        int minJac = Integer.MAX_VALUE;
+        List<Integer> tied = new ArrayList<>();
 
         for (WorkerInfo info : workers) {
+            WorkerService w = getWorker(info);
+            int jac = w.getJac();
 
-            WorkerService worker =
-                    getWorker(
-                            info
-                    );
-
-            if (worker.isCoordinator()) {
-
-                return worker;
+            if (jac < minJac) {
+                minJac = jac;
+                tied.clear();
+                tied.add(w.getId());
+            } else if (jac == minJac) {
+                tied.add(w.getId());
             }
         }
+
+        int winner = tied.stream().max(Integer::compareTo).orElse(-1);
+        System.out.println("Real minimum JAC = " + minJac + ", tied workers = " + tied);
+        System.out.println("Expected by rule = Worker " + winner);
+        return new CandidateExpectation(winner, minJac, tied);
+    }
+
+    private static void endCurrentTermForTest(List<WorkerInfo> workers) throws Exception {
+        int coordinatorId = -1, term = -1;
+        for (WorkerInfo info : workers) {
+            WorkerService w = getWorker(info);
+            if (w.getCoordinatorId() != -1) {
+                coordinatorId = w.getCoordinatorId();
+                term = w.getCoordinatorTerm();
+                break;
+            }
+        }
+        if (coordinatorId == -1) return;
+
+        com.example.cs324_a1.coordinator.TermEndMessage end =
+                new com.example.cs324_a1.coordinator.TermEndMessage(coordinatorId, term);
+
+        getWorker(workers.get(0)).receiveTermEnd(end, -1);
+        Thread.sleep(500);
+    }
+
+    private static WorkerInfo findNonNeighbourReachableTarget(
+            List<WorkerInfo> workers, int initiatorId) throws Exception {
+
+        WorkerService initiator = null;
+        for (WorkerInfo info : workers)
+            if (info.getId() == initiatorId) initiator = getWorker(info);
+
+        if (initiator == null) return null;
+
+        List<Integer> direct = new ArrayList<>();
+        for (WorkerInfo n : initiator.getNeighbours()) direct.add(n.getId());
+
+        for (WorkerInfo info : workers)
+            if (info.getId() != initiatorId && !direct.contains(info.getId()))
+                return info;
 
         return null;
     }
 
+    private static int chooseNeighbourSender(WorkerService target) throws Exception {
+        List<WorkerInfo> neighbours = target.getNeighbours();
+        return neighbours.isEmpty() ? -1 : neighbours.get(0).getId();
+    }
 
-    // =========================================================
-    // WAIT FOR COORDINATOR
-    // =========================================================
+    private static boolean waitUntilWorkerRemoved(
+            BootstrapService bootstrap, int workerId, long timeout) throws Exception {
 
-    private static WorkerService waitForCoordinator(
-            List<WorkerInfo> workers,
-            long timeout)
-            throws Exception {
+        long end = System.currentTimeMillis() + timeout;
+        while (System.currentTimeMillis() < end) {
+            boolean found = false;
+            for (WorkerInfo info : bootstrap.getActiveWorkers())
+                if (info.getId() == workerId) { found = true; break; }
 
-        long start =
-                System.currentTimeMillis();
-
-        while (System.currentTimeMillis()
-                - start < timeout) {
-
-            WorkerService coordinator =
-                    findCoordinator(
-                            workers
-                    );
-
-            if (coordinator != null) {
-
-                return coordinator;
-            }
-
-            Thread.sleep(
-                    200
-            );
+            if (!found) return true;
+            Thread.sleep(1000);
         }
-
-        return null;
+        return false;
     }
 
-
-    // =========================================================
-    // REQUIRE COORDINATOR
-    // =========================================================
-
-    private static WorkerService requireCoordinator(
-            List<WorkerInfo> workers)
-            throws Exception {
-
-        WorkerService coordinator =
-                findCoordinator(
-                        workers
-                );
-
-        if (coordinator == null) {
-
-            throw new IllegalStateException(
-                    "No active coordinator."
-            );
-        }
-
-        return coordinator;
+    private static void ensureNoCoordinator(List<WorkerInfo> workers) throws Exception {
+        boolean has = false;
+        for (WorkerInfo info : workers)
+            if (getWorker(info).getCoordinatorId() != -1) { has = true; break; }
+        if (has) endCurrentTermForTest(workers);
     }
 
-
-    // =========================================================
-    // COUNT COORDINATORS
-    // =========================================================
-
-    private static int countCoordinators(
-            List<WorkerInfo> workers)
-            throws Exception {
-
-        int count = 0;
-
-        for (WorkerInfo info : workers) {
-
-            WorkerService worker =
-                    getWorker(
-                            info
-                    );
-
-            if (worker.isCoordinator()) {
-
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-
-    // =========================================================
-    // FIND WORKER BY ID
-    // =========================================================
-
-    private static WorkerService findWorkerById(
-            List<WorkerInfo> workers,
-            int workerId)
-            throws Exception {
-
-        for (WorkerInfo info : workers) {
-
-            if (info.getId() == workerId) {
-
-                return getWorker(
-                        info
-                );
-            }
-        }
-
-        throw new IllegalStateException(
-                "Worker "
-                + workerId
-                + " was not found."
-        );
-    }
-
-
-    // =========================================================
-    // DISPLAY WORKERS
-    // =========================================================
-
-    private static void printWorkers(
-            List<WorkerInfo> workers)
-            throws Exception {
-
-        for (WorkerInfo info : workers) {
-
-            WorkerService worker =
-                    getWorker(
-                            info
-                    );
-
-            System.out.println(
-                    "Worker "
-                    + worker.getId()
-                    + " | JAC = "
-                    + worker.getJac()
-                    + " | Coordinator = "
-                    + worker.isCoordinator()
-                    + " | Neighbours = "
-                    + worker.getNeighbours().size()
-            );
-        }
-    }
-
-
-    // =========================================================
-    // PASS
-    // =========================================================
-
-    private static void pass(
-            String message) {
-
-        passed++;
-
-        System.out.println(
-                "[PASS] "
-                + message
-        );
-    }
-
-
-    // =========================================================
-    // FAIL
-    // =========================================================
-
-    private static void fail(
-            String message) {
-
-        failed++;
-
-        System.out.println(
-                "[FAIL] "
-                + message
-        );
-    }
-
-
-    // =========================================================
-    // FINAL SUMMARY
-    // =========================================================
-
-    private static void printSummary() {
-
+    private static void heading(int number, String name) {
         System.out.println();
-        System.out.println(
-                "=========================================="
-        );
+        System.out.println("========== TEST " + number + ": " + name + " ==========");
+    }
 
-        System.out.println(
-                " TEST SUMMARY"
-        );
+    private static void pass(String message) {
+        passed++;
+        System.out.println("[PASS] " + message);
+    }
 
-        System.out.println(
-                "=========================================="
-        );
+    private static void fail(String test, String message) {
+        failed++;
+        System.out.println("[FAIL] " + test + " - " + message);
+    }
 
-        System.out.println(
-                "Passed: "
-                + passed
-        );
+    private static void summary() {
+        System.out.println();
+        System.out.println("==================================================");
+        System.out.println(" PERSON 2 TEST SUMMARY");
+        System.out.println(" Passed: " + passed);
+        System.out.println(" Failed: " + failed);
+        System.out.println("==================================================");
+    }
 
-        System.out.println(
-                "Failed: "
-                + failed
-        );
+    private static class CandidateExpectation {
+        final int workerId, jac;
+        final List<Integer> tiedIds;
 
-        System.out.println(
-                "=========================================="
-        );
+        CandidateExpectation(int workerId, int jac, List<Integer> tiedIds) {
+            this.workerId = workerId;
+            this.jac = jac;
+            this.tiedIds = new ArrayList<>(tiedIds);
+        }
     }
 }
