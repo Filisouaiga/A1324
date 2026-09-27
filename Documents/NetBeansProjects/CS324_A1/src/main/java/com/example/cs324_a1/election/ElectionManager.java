@@ -38,12 +38,25 @@ public class ElectionManager {
         int number = electionCounter.incrementAndGet();
 
         // Create a short unique code
-        String uniqueCode = UUID.randomUUID().toString().substring(0, 4).toUpperCase();
+        String uniqueCode = UUID.randomUUID()
+                .toString()
+                .substring(0, 4)
+                .toUpperCase();
 
         // Create a readable election ID
-        String electionId = "ELECTION-W" + initiatorId + "-" + String.format("%03d", number) + "-" + uniqueCode;
+        String electionId =
+                "ELECTION-W"
+                + initiatorId
+                + "-"
+                + String.format("%03d", number)
+                + "-"
+                + uniqueCode;
 
-        ElectionMessage message = new ElectionMessage(electionId, initiatorId);
+        ElectionMessage message =
+                new ElectionMessage(
+                        electionId,
+                        initiatorId
+                );
 
         System.out.println();
         System.out.println("==============================");
@@ -253,55 +266,95 @@ public class ElectionManager {
         return reply;
     }
 
-    public WorkerInfo selectCoordinator(
-            List<WorkerInfo> workers) {
+    // Select coordinator using JAC and Worker ID
+    public WorkerInfo selectCoordinator(List<WorkerInfo> workers) {
 
         if (workers == null || workers.isEmpty()) {
-
             return null;
         }
 
         WorkerInfo winner = null;
+        int lowestJac = Integer.MAX_VALUE;
+        List<Integer> eligibleWorkers = new ArrayList<>();
 
         System.out.println();
         System.out.println("==============================");
         System.out.println(" COORDINATOR SELECTION");
         System.out.println("==============================");
 
+        // Display workers and find the lowest JAC
         for (WorkerInfo worker : workers) {
 
             if (worker == null) {
                 continue;
             }
 
-            System.out.println("Worker " + worker.getWorkerId() + " | JAC = " + worker.getJac());
+            System.out.println(
+                    "Worker " + worker.getWorkerId()
+                    + " | JAC = " + worker.getJac()
+            );
 
-            if (winner == null) {
+            if (worker.getJac() < lowestJac) {
+
+                lowestJac = worker.getJac();
+
+                eligibleWorkers.clear();
+                eligibleWorkers.add(worker.getWorkerId());
 
                 winner = worker;
 
-                continue;
+            } else if (worker.getJac() == lowestJac) {
+
+                eligibleWorkers.add(worker.getWorkerId());
+
+                // Highest ID wins when JAC is equal
+                if (winner == null
+                        || worker.getWorkerId() > winner.getWorkerId()) {
+
+                    winner = worker;
+                }
             }
+        }
 
-            if (worker.getJac() < winner.getJac()) {
+        System.out.println();
+        System.out.println("------------------------------");
+        System.out.println("Lowest JAC       : " + lowestJac);
+        System.out.println("Eligible Workers : " + eligibleWorkers);
 
-                winner = worker;
+        if (eligibleWorkers.size() > 1) {
 
-            } else if (
-                    worker.getJac() == winner.getJac() && worker.getWorkerId() > winner.getWorkerId()) {
+            System.out.println("Tie Detected     : YES");
+            System.out.println("Tie-Break Rule   : Highest Worker ID");
 
-                winner = worker;
-            }
+        } else {
+
+            System.out.println("Tie Detected     : NO");
+            System.out.println("Selection Rule   : Lowest JAC");
         }
 
         if (winner != null) {
 
-            System.out.println("------------------------------");
+            System.out.println();
+            System.out.println(
+                    "Selected Worker  : Worker "
+                    + winner.getWorkerId()
+            );
 
-            System.out.println("Winner: Worker " + winner.getWorkerId() + " | JAC = " + winner.getJac());
+            if (eligibleWorkers.size() > 1) {
 
-            System.out.println("------------------------------");
+                System.out.println(
+                        "Reason           : Lowest JAC tied, highest ID wins"
+                );
+
+            } else {
+
+                System.out.println(
+                        "Reason           : Worker has the lowest JAC"
+                );
+            }
         }
+
+        System.out.println("------------------------------");
 
         return winner;
     }

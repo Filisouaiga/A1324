@@ -67,6 +67,22 @@ public class Main {
 
         System.out.println();
 
+        // Step 4: Start one or more clients to submit jobs
+        System.out.println("4. Start one or more clients:");
+        System.out.println("   - ClientGUI      (window: manual/CSV input)");
+        System.out.println("   - ClientConsole  (command line)");
+        System.out.println("   Clients find the coordinator through");
+        System.out.println("   the Bootstrap Node and submit MAX,");
+        System.out.println("   PRIMESUM and PRIMECOUNT jobs via RMI.");
+
+        System.out.println();
+
+        // Step 5: Automated tests for client, jobs and multithreading
+        System.out.println("5. Part3Tester runs the job-processing tests");
+        System.out.println("   against the running system.");
+
+        System.out.println();
+
         // Display the end of the startup information
         System.out.println("========================================");
     }

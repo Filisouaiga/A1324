@@ -16,6 +16,9 @@ public class CoordinatorManager {
     private int jobsAssignedThisTerm = 0;
     private static final int MAX_JOBS_PER_TERM = 5;
 
+    // Jobs accepted (not necessarily finished) this term; stops concurrent clients overshooting the limit
+    private int jobsAdmittedThisTerm = 0;
+
     private final Set<String> processedCoordinatorMessages = new HashSet<>();
 
     private final Set<String> processedTermEndMessages = new HashSet<>();
@@ -76,6 +79,8 @@ public class CoordinatorManager {
 
         jobsAssignedThisTerm = 0;
 
+        jobsAdmittedThisTerm = 0;
+
         System.out.println();
         System.out.println("==============================");
         System.out.println(" NEW COORDINATOR");
@@ -123,6 +128,27 @@ public class CoordinatorManager {
         return jobsAssignedThisTerm >= MAX_JOBS_PER_TERM;
     }
 
+    // Reserve one of this term's job slots for a newly submitted job.
+    // The check and the increment happen under one lock, so when several clients
+    // submit at the same time no more than MAX_JOBS_PER_TERM jobs are accepted.
+    // Returns the term the job was admitted in, or -1 if it was rejected.
+    public synchronized int tryAdmitJob(int workerId) {
+
+        if (coordinatorId != workerId) {
+
+            return -1;
+        }
+
+        if (jobsAdmittedThisTerm >= MAX_JOBS_PER_TERM) {
+
+            return -1;
+        }
+
+        jobsAdmittedThisTerm++;
+
+        return currentTerm;
+    }
+
     public synchronized int getJobsAssignedThisTerm() {
 
         return jobsAssignedThisTerm;
@@ -159,6 +185,8 @@ public class CoordinatorManager {
         coordinatorId = -1;
 
         jobsAssignedThisTerm = 0;
+
+        jobsAdmittedThisTerm = 0;
 
         System.out.println("[TERM] No active coordinator.");
     }
@@ -213,6 +241,8 @@ public class CoordinatorManager {
         coordinatorId = -1;
 
         jobsAssignedThisTerm = 0;
+
+        jobsAdmittedThisTerm = 0;
 
         System.out.println("[TERM] Term "+ currentTerm+ " is now closed.");
 

@@ -6,6 +6,8 @@ package com.example.cs324_a1.jobtype;
 
 import java.util.List;
 
+// Stateless: one instance is shared by all job threads of a worker,
+// which is safe because no fields are read or written while processing.
 public class JobProcessor {
 
     public long process(JobRequest request) {
@@ -28,6 +30,34 @@ public class JobProcessor {
             default:
                 throw new IllegalArgumentException("Unsupported job type.");
         }
+    }
+
+    // Combine partial results from workers into the final answer:
+    // MAX takes the largest partial maximum, PRIMESUM and PRIMECOUNT add the partials.
+    public static long combine(JobType type, List<JobResult> partialResults) {
+
+        if (partialResults == null || partialResults.isEmpty()) {
+            throw new IllegalArgumentException("No partial results.");
+        }
+
+        if (type == JobType.MAX) {
+
+            long maximum = Long.MIN_VALUE;
+
+            for (JobResult result : partialResults) {
+                maximum = Math.max(maximum, result.getResult());
+            }
+
+            return maximum;
+        }
+
+        long total = 0;
+
+        for (JobResult result : partialResults) {
+            total += result.getResult();
+        }
+
+        return total;
     }
 
     private long calculateMax(List<Integer> numbers) {
@@ -57,9 +87,10 @@ public class JobProcessor {
 
         long sum = 0;
 
-        for (int number = start; number <= end; number++) {
+        // long loop variable: an int would overflow and never stop when end == Integer.MAX_VALUE
+        for (long number = start; number <= end; number++) {
 
-            if (isPrime(number)) {
+            if (isPrime((int) number)) {
                 sum += number;
             }
         }

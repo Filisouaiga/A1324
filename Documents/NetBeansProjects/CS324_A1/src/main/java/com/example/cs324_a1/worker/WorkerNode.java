@@ -24,12 +24,16 @@ import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class WorkerNode extends UnicastRemoteObject implements WorkerService {
     
@@ -47,9 +51,23 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
     private final String bootstrapHost;
     private final int bootstrapPort;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    private final ExecutorService jobExecutor = Executors.newCachedThreadPool();
     private final JobProcessor jobProcessor = new JobProcessor();
-    
+
+    // Worker threads that run the computations. The pool is bounded so a burst of jobs
+    // queues up instead of starting more CPU-bound threads than the machine has cores.
+    private static final int JOB_THREADS = Math.max( 2, Runtime.getRuntime().availableProcessors() );
+    private final ExecutorService jobExecutor;
+
+    // Coordinator threads that send sub-jobs to workers and wait for the partial results.
+    // Kept separate from jobExecutor: if both shared one bounded pool, dispatch threads
+    // blocked waiting on sub-jobs could occupy every thread, leaving none to run the
+    // sub-jobs they are waiting for (thread-starvation deadlock).
+    private final ExecutorService dispatchExecutor;
+
+    // Task tracking, updated by many job threads at once, so atomic counters are used
+    private final AtomicInteger activeJobs = new AtomicInteger();
+    private final AtomicLong completedJobs = new AtomicLong();
+
     public WorkerNode( int id, String host, int port, String bootstrapHost, int bootstrapPort, int initialJac) throws RemoteException {
         super();
         this.id = id;
@@ -61,6 +79,8 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         this.info = new WorkerInfo( id, host, port, rmiName, initialJac );
         this.electionManager = new ElectionManager();
         this.coordinatorManager = new CoordinatorManager();
+        this.jobExecutor = Executors.newFixedThreadPool( JOB_THREADS, Thread.ofPlatform().name( "Worker-" + id + "-job-", 1 ).daemon( true ).factory() );
+        this.dispatchExecutor = Executors.newCachedThreadPool( Thread.ofPlatform().name( "Worker-" + id + "-dispatch-", 1 ).daemon( true ).factory() );
     }
     
     public WorkerNode( int id, String host, int port, String bootstrapHost, int bootstrapPort) throws RemoteException {
@@ -193,7 +213,7 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         else {
             coordinator = "NONE";
         }
-        return "Worker " + id + " | JAC=" + info.getJac() + " | neighbours=" + neighbours.size() + " | coordinator=" + coordinator + " | leaderman=" + leaderman;
+        return "Worker " + id + " | JAC=" + info.getJac() + " | neighbours=" + neighbours.size() + " | coordinator=" + coordinator + " | leaderman=" + leaderman + " | activeJobs=" + activeJobs.get() + " | completedJobs=" + completedJobs.get();
     }
     
     public int getWorkerId() {
@@ -476,28 +496,50 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         if (!isCoordinator()) {
             throw new RemoteException( "Worker " + id + " is not the coordinator. " + "Current coordinator is Worker " + coordinatorManager.getCoordinatorId() );
         }
-        
-        System.out.println();
-        System.out.println("==============================");
-        System.out.println(" NEW DISTRIBUTED JOB");
-        System.out.println("==============================");
-        System.out.println( "Job ID   : " + request.getJobId() );
-        System.out.println( "Job Type : " + request.getJobType() );
-        
+
+        // Several clients can call submitJob at the same time (RMI uses one thread per call).
+        // Reserving the job slot atomically stops them all being accepted past the five-job limit.
+        int term = coordinatorManager.tryAdmitJob( id );
+        if (term == -1) {
+            throw new RemoteException( "Coordinator Worker " + id + " has reached its " + coordinatorManager.getMaxJobsPerTerm() + "-job limit for this term; retry after the next election." );
+        }
+
+        // One println call per block: jobs run concurrently, and separate println calls
+        // from different threads would interleave line by line
+        System.out.println( "\n==============================\n NEW DISTRIBUTED JOB\n==============================\n"
+                + "Job ID   : " + request.getJobId() + "\n"
+                + "Job      : " + request.describe() + "\n"
+                + "Client   : " + request.getClientId() + "\n"
+                + "Term     : " + term );
+
+        JobResult result = null;
+        Exception failure = null;
         try {
-            JobResult result = distributeJob( request );
-            boolean termFinished = coordinatorManager .recordJobAssignment();
-            if (termFinished) {
-                finishCoordinatorTerm();
-            }
-            return result;
+            result = distributeJob( request, term );
         }
         catch (Exception e) {
-            throw new RemoteException( "Distributed job failed.", e );
+            failure = e;
         }
+
+        // Count the job even if it failed, otherwise the term could never reach its limit
+        boolean termFinished = coordinatorManager .recordJobAssignment();
+        if (termFinished) {
+            try {
+                finishCoordinatorTerm();
+            }
+            catch (RemoteException e) {
+                System.err.println( "[TERM] Could not finish term: " + e.getMessage() );
+            }
+        }
+
+        if (failure != null) {
+            throw new RemoteException( "Distributed job failed.", failure );
+        }
+        return result;
     }
-    
-    private JobResult distributeJob( JobRequest request) throws Exception {
+
+    private JobResult distributeJob( JobRequest request, int term) throws Exception {
+        long startedAt = System.currentTimeMillis();
         List<WorkerInfo> workers = bootstrap.getActiveWorkers();
         if (workers == null) {
             workers = new ArrayList<>();
@@ -515,28 +557,29 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         if (workers.isEmpty()) {
             throw new RemoteException( "No active workers available." );
         }
+        workers.sort( Comparator.comparingInt( WorkerInfo::getId ) );
         List<JobAssignment> assignments = createAssignments( request, workers );
+        StringBuilder split = new StringBuilder( "[JOB] Split " + request.describe() + " into " + assignments.size() + " part(s):" );
+        for (JobAssignment assignment : assignments) {
+            split.append( "\n      Worker " ).append( assignment.worker.getId() ).append( " -> " ).append( assignment.request.describePortion() );
+        }
+        System.out.println( split );
+
+        // Send every part at once so the workers compute in parallel
         List<CompletableFuture<JobResult>> futures = new ArrayList<>();
         for (JobAssignment assignment : assignments) {
-            CompletableFuture<JobResult> future = CompletableFuture.supplyAsync( () -> {
-                try {
-                    return executeAssignment( assignment );
-                }
-                catch (Exception e) {
-                    throw new RuntimeException( e );
-                }
-            }
-            , jobExecutor );
-            futures.add( future );
+            futures.add( CompletableFuture.supplyAsync( () -> executeAssignment( assignment ), dispatchExecutor ) );
         }
-        
+
+        // Each dispatch thread hands back its partial result through its own future rather than
+        // adding to a shared list, so collecting them here needs no locking.
         List<JobResult> partialResults = new ArrayList<>();
         for (CompletableFuture<JobResult> future : futures) {
             partialResults.add( future.get() );
         }
-        long finalValue = combineResults( request.getJobType(), partialResults );
-        System.out.println( "[JOB] Final result = " + finalValue );
-        return new JobResult( request.getJobId(), request.getJobType(), finalValue, id );
+        long finalValue = JobProcessor.combine( request.getJobType(), partialResults );
+        System.out.println( "[JOB] Combined " + partialResults.size() + " partial result(s) of " + request.describe() + ": final result = " + finalValue );
+        return JobResult.combined( request, finalValue, id, term, partialResults, startedAt, System.currentTimeMillis() );
     }
     
     private List<JobAssignment> createAssignments( JobRequest request, List<WorkerInfo> workers) {
@@ -556,7 +599,7 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
                 long size = baseSize + (i < remainder ? 1 : 0);
                 int partStart = (int) current;
                 int partEnd = (int) ( current + size - 1 );
-                JobRequest part = new JobRequest( JobType.PRIMESUM, partStart, partEnd );
+                JobRequest part = new JobRequest( JobType.PRIMESUM, partStart, partEnd, request.getClientId() );
                 assignments.add( new JobAssignment( workers.get(i), part ) );
                 current = (long) partEnd + 1;
             }
@@ -573,55 +616,71 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         for (int i = 0; i < workerCount; i++) {
             int size = baseSize + (i < remainder ? 1 : 0);
             List<Integer> partNumbers = new ArrayList<>( numbers.subList( index, index + size ) );
-            JobRequest part = new JobRequest( request.getJobType(), partNumbers );
+            JobRequest part = new JobRequest( request.getJobType(), partNumbers, request.getClientId() );
             assignments.add( new JobAssignment( workers.get(i), part ) );
             index += size;
         }
         return assignments;
     }
-    private JobResult executeAssignment( JobAssignment assignment) throws Exception {
+    private JobResult executeAssignment( JobAssignment assignment) {
         WorkerInfo worker = assignment.worker;
         JobRequest request = assignment.request;
-        if (worker.getId() == id) {
-            return executeSubJob( request );
+        try {
+            if (worker.getId() == id) {
+                return executeSubJob( request );
+            }
+            System.out.println( "[JOB] Coordinator Worker " + id + " assigning " + request.getJobType() + " " + request.describePortion() + " to Worker " + worker.getId() );
+            info.incrementJac();
+            WorkerService remote = getRemoteWorker( worker );
+            return remote.executeSubJob( request );
         }
-        System.out.println( "[JOB] Coordinator Worker " + id + " assigning " + request.getJobType() + " to Worker " + worker.getId() );
-        info.incrementJac();
-        WorkerService remote = getRemoteWorker( worker );
-        return remote.executeSubJob( request );
+        catch (Exception e) {
+            if (worker.getId() == id) {
+                throw new CompletionException( e );
+            }
+            // The worker crashed or became unreachable mid-job (Bootstrap may not have noticed yet).
+            // Process its part here so the client still gets a complete, correct result.
+            System.err.println( "[JOB] Worker " + worker.getId() + " failed to process " + request.describePortion() + ". Coordinator Worker " + id + " is processing it instead." );
+            try {
+                return executeSubJob( request ).withNote( "reassigned from Worker " + worker.getId() );
+            }
+            catch (RemoteException local) {
+                throw new CompletionException( local );
+            }
+        }
     }
-    
+
     @Override public JobResult executeSubJob( JobRequest request) throws RemoteException {
         if (request == null) {
             throw new RemoteException( "Sub-job cannot be null." );
         }
         try {
-            return CompletableFuture.supplyAsync( () -> {
-                long result = jobProcessor.process( request ); System.out.println( "[JOB] Worker " + id + " completed " + request.getJobType() + " | result=" + result ); return new JobResult( request.getJobId(), request.getJobType(), result, id );
-            }
-            , jobExecutor ).get();
+            // RMI runs each incoming call on its own thread, so sub-jobs from several jobs/clients
+            // arrive here concurrently; each one is queued onto this worker's job threads.
+            return CompletableFuture.supplyAsync( () -> runJob( request ), jobExecutor ).get();
         }
         catch (Exception e) {
             throw new RemoteException( "Worker " + id + " failed to execute job.", e );
         }
     }
-    
-    private long combineResults( JobType type, List<JobResult> results) {
-        if (results == null || results.isEmpty()) {
-            throw new IllegalArgumentException( "No partial results." );
+
+    // Runs on a job thread. Uses only local variables and the stateless JobProcessor,
+    // so concurrent jobs cannot interfere with each other's data.
+    private JobResult runJob( JobRequest request) {
+        int running = activeJobs.incrementAndGet();
+        String threadName = Thread.currentThread().getName();
+        long startedAt = System.currentTimeMillis();
+        System.out.println( "[JOB] Worker " + id + " started " + request.getJobType() + " " + request.describePortion() + " on " + threadName + " (active jobs: " + running + ")" );
+        try {
+            long result = jobProcessor.process( request );
+            long finishedAt = System.currentTimeMillis();
+            completedJobs.incrementAndGet();
+            System.out.println( "[JOB] Worker " + id + " completed " + request.getJobType() + " " + request.describePortion() + " | result=" + result + " | " + (finishedAt - startedAt) + " ms" );
+            return JobResult.partial( request, result, id, threadName, startedAt, finishedAt );
         }
-        if (type == JobType.MAX) {
-            long maximum = Long.MIN_VALUE;
-            for (JobResult result : results) {
-                maximum = Math.max( maximum, result.getResult() );
-            }
-            return maximum;
+        finally {
+            activeJobs.decrementAndGet();
         }
-        long total = 0;
-        for (JobResult result : results) {
-            total += result.getResult();
-        }
-        return total;
     }
     
     public void recordCoordinatorJob( boolean assignedToAnotherWorker) throws RemoteException {
@@ -711,6 +770,7 @@ public class WorkerNode extends UnicastRemoteObject implements WorkerService {
         catch (Exception ignored) {
         }
         scheduler.shutdownNow();
+        dispatchExecutor.shutdownNow();
         jobExecutor.shutdownNow();
         System.out.println( "[Worker " + id + "] Shutdown complete." );
     }
