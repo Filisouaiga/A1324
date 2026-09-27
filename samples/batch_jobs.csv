@@ -1,0 +1,8 @@
+# One job per row: JOBTYPE,values...
+# MAX and PRIMECOUNT take a list of numbers; PRIMESUM takes start,end
+MAX,4,19,7,88,23
+PRIMESUM,1,1000
+PRIMECOUNT,2,3,4,5,6,7,8,9,10,11
+PRIMESUM,1,100000
+MAX,-50,-7,-300,-12
+PRIMECOUNT,97,98,99,100,101,102,103
